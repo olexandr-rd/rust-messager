@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="uk">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -8,12 +8,16 @@
 </head>
 <body>
 <div class="container mt-5">
-    <h1>Месенджер</h1>
+    <div class="d-flex justify-content-between align-items-center">
+        <h1>Месенджер</h1>
+        <form action="/logout" method="POST">
+            <button class="btn btn-danger" type="submit">Вийти</button>
+        </form>
+    </div>
     <div class="mb-3">
         <textarea id="chat" class="form-control" rows="10" readonly></textarea>
     </div>
     <form class="input-group" id="message-form">
-<!--        <label for="message">Повідомлення</label>-->
         <input type="text" id="message" class="form-control" placeholder="Напишіть повідомлення...">
         <button class="btn btn-primary" type="submit" onclick="sendMessage()">Надіслати</button>
     </form>
@@ -23,21 +27,30 @@
     const messageInput = document.getElementById('message');
     const socket = new WebSocket("ws://127.0.0.1:8080/ws/");
 
-    document.getElementById('message-form').addEventListener("submit", async (event) =>{
+    // socket.onopen = () => console.log("WebSocket connection opened");
+    // socket.onmessage = (event) => console.log("Message from server:", event.data);
+    // socket.onerror = (error) => console.error("WebSocket error:", error);
+    // socket.onclose = () => console.log("WebSocket connection closed");
+
+    document.getElementById('message-form').addEventListener("submit", async (event) => {
         event.preventDefault();
-    })
+    });
 
-
-
+    // Обробка отриманих повідомлень
     socket.onmessage = function(event) {
+        // Додаємо кожне отримане повідомлення в текстове поле
         chat.value += event.data + "\n";
     };
 
+    // Надсилання нового повідомлення
     function sendMessage() {
-        const message = messageInput.value;
-        socket.send(message);
-        messageInput.value = '';
+        const message = messageInput.value.trim();
+        if (message) {
+            socket.send(message);
+            messageInput.value = '';
+        }
     }
 </script>
+
 </body>
 </html>
