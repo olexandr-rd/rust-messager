@@ -3,6 +3,7 @@ use bcrypt::{hash, verify};
 use serde::Deserialize;
 use sqlx::SqlitePool;
 use uuid::Uuid;
+use crate::AppState;
 use crate::models::{SessionToken, User};
 
 #[derive(Deserialize)]
@@ -37,14 +38,19 @@ async fn login_form() -> HttpResponse {
 
 // Обробка реєстрації
 #[post("/register")]
-async fn register(data: web::Form<RegisterData>, db: web::Data<SqlitePool>) -> HttpResponse {
+async fn register(
+    data: web::Form<RegisterData>,
+    app_state: web::Data<AppState>,
+) -> HttpResponse {
+    let db = &app_state.db_pool;
+
     let hashed_password = hash(&data.password, 4).unwrap();
     let result = sqlx::query!(
         "INSERT INTO users (username, password) VALUES (?, ?)",
         data.username,
         hashed_password
     )
-        .execute(db.get_ref())
+        .execute(db)
         .await;
 
     match result {
@@ -65,10 +71,17 @@ async fn register(data: web::Form<RegisterData>, db: web::Data<SqlitePool>) -> H
 
 // Обробка входу
 #[post("/login")]
-async fn login(data: web::Form<LoginData>, db: web::Data<SqlitePool>) -> HttpResponse {
-    let user = sqlx::query_as::<_, User>("SELECT * FROM users WHERE username = ?")
+async fn login(
+    data: web::Form<LoginData>,
+    app_state: web::Data<AppState>,
+) -> HttpResponse {
+    let db = &app_state.db_pool;
+
+    let user = sqlx::query_as::<_, User>(
+        "SELECT * FROM users WHERE username = ?"
+    )
         .bind(&data.username)
-        .fetch_optional(db.get_ref())
+        .fetch_optional(db)
         .await;
 
     if let Ok(Some(user)) = user {
@@ -79,7 +92,7 @@ async fn login(data: web::Form<LoginData>, db: web::Data<SqlitePool>) -> HttpRes
                 user.id,
                 session_token
             )
-                .execute(db.get_ref())
+                .execute(db)
                 .await
                 .unwrap();
 
@@ -98,14 +111,17 @@ async fn login(data: web::Form<LoginData>, db: web::Data<SqlitePool>) -> HttpRes
         .finish()
 }
 
+// Головна сторінка
 #[get("/")]
-async fn index(req: HttpRequest, db: web::Data<SqlitePool>) -> HttpResponse {
+async fn index(req: HttpRequest, app_state: web::Data<AppState>) -> HttpResponse {
+    let db = &app_state.db_pool;
+
     if let Some(cookie) = req.cookie("session_token") {
         let session = sqlx::query_as::<_, SessionToken>(
             "SELECT * FROM sessions WHERE session_token = ?"
         )
             .bind(cookie.value())
-            .fetch_optional(db.get_ref())
+            .fetch_optional(db)
             .await
             .unwrap();
 
@@ -122,6 +138,7 @@ async fn index(req: HttpRequest, db: web::Data<SqlitePool>) -> HttpResponse {
         .finish()
 }
 
+// Обробка виходу
 #[post("/logout")]
 async fn logout() -> impl Responder {
     HttpResponse::Found()

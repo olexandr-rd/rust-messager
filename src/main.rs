@@ -2,17 +2,32 @@ mod models;
 mod websocket;
 mod routes;
 
-use actix_web::{web, App, HttpServer};
+use actix_web::{web, App, HttpServer, middleware::Logger};
 use sqlx::SqlitePool;
+use tokio::sync::broadcast;
+
+struct AppState {
+    db_pool: SqlitePool,
+    tx: broadcast::Sender<String>,
+}
 
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
+    env_logger::init(); // Ініціалізація логера
+
     let db_pool = SqlitePool::connect("sqlite://app.db").await.unwrap();
+    let (tx, _rx) = broadcast::channel::<String>(100);
+
+    let app_state = web::Data::new(AppState {
+        db_pool: db_pool.clone(),
+        tx,
+    });
 
     HttpServer::new(move || {
         App::new()
-            .app_data(web::Data::new(db_pool.clone()))
+            .wrap(Logger::default())
+            .app_data(app_state.clone())
             .service(routes::register_form)
             .service(routes::login_form)
             .service(routes::register)

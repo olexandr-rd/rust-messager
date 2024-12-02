@@ -19,30 +19,25 @@
     </div>
     <form class="input-group" id="message-form">
         <input type="text" id="message" class="form-control" placeholder="Напишіть повідомлення...">
-        <button class="btn btn-primary" type="submit" onclick="sendMessage()">Надіслати</button>
+        <button class="btn btn-primary" type="submit">Надіслати</button>
     </form>
 </div>
 <script>
     const chat = document.getElementById('chat');
+    chat.value = ''; // Очищення чату при завантаженні сторінки
+
     const messageInput = document.getElementById('message');
     const socket = new WebSocket("ws://127.0.0.1:8080/ws/");
 
-    // socket.onopen = () => console.log("WebSocket connection opened");
-    // socket.onmessage = (event) => console.log("Message from server:", event.data);
-    // socket.onerror = (error) => console.error("WebSocket error:", error);
-    // socket.onclose = () => console.log("WebSocket connection closed");
-
     document.getElementById('message-form').addEventListener("submit", async (event) => {
         event.preventDefault();
+        sendMessage();
     });
 
-    // Обробка отриманих повідомлень
     socket.onmessage = function(event) {
-        // Додаємо кожне отримане повідомлення в текстове поле
         chat.value += event.data + "\n";
     };
 
-    // Надсилання нового повідомлення
     function sendMessage() {
         const message = messageInput.value.trim();
         if (message) {
@@ -51,6 +46,5 @@
         }
     }
 </script>
-
 </body>
 </html>
