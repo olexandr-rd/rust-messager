@@ -1,10 +1,10 @@
+use std::collections::HashMap;
 use actix_web::{web, HttpResponse, Responder, get, post, cookie, http::header, HttpRequest};
 use bcrypt::{hash, verify};
-use serde::Deserialize;
-use sqlx::SqlitePool;
+use serde::{Serialize, Deserialize};
 use uuid::Uuid;
 use crate::AppState;
-use crate::models::{SessionToken, User};
+use crate::models::{ChatMessage, SessionToken, User};
 
 #[derive(Deserialize)]
 pub struct RegisterData {
@@ -16,6 +16,12 @@ pub struct RegisterData {
 pub struct LoginData {
     pub username: String,
     pub password: String,
+}
+
+#[derive(Serialize)]
+pub struct ApiUser {
+    pub id: i64,
+    pub username: String,
 }
 
 // Форма реєстрації
@@ -150,4 +156,117 @@ async fn logout() -> impl Responder {
                 .finish(),
         )
         .finish()
+}
+
+#[get("/api/users")]
+async fn get_users(app_state: web::Data<AppState>, req: HttpRequest) -> HttpResponse {
+    let db = &app_state.db_pool;
+
+    // Отримуємо поточного користувача
+    if let Some(cookie) = req.cookie("session_token") {
+        let session = sqlx::query_as::<_, SessionToken>(
+            "SELECT * FROM sessions WHERE session_token = ?",
+        )
+            .bind(cookie.value())
+            .fetch_optional(db)
+            .await
+            .unwrap();
+
+        if let Some(session) = session {
+            let user_id = session.user_id;
+
+            // Отримуємо список користувачів, виключаючи поточного
+            let users = sqlx::query!(
+                "SELECT id, username FROM users WHERE id != ?",
+                user_id
+            )
+                .fetch_all(db)
+                .await
+                .unwrap_or_default();
+
+            let users: Vec<ApiUser> = users.into_iter()
+                .map(|record| ApiUser {
+                    id: record.id,
+                    username: record.username,
+                })
+                .collect();
+
+            return HttpResponse::Ok().json(users);
+        }
+    }
+
+    HttpResponse::Unauthorized().body("Unauthorized")
+}
+
+#[get("/api/messages")]
+async fn get_messages(
+    app_state: web::Data<AppState>,
+    req: HttpRequest,
+    query: web::Query<HashMap<String, String>>,
+) -> HttpResponse {
+    let db = &app_state.db_pool;
+
+    if let Some(cookie) = req.cookie("session_token") {
+        let session = sqlx::query_as::<_, SessionToken>(
+            "SELECT * FROM sessions WHERE session_token = ?",
+        )
+            .bind(cookie.value())
+            .fetch_optional(db)
+            .await
+            .unwrap();
+
+        if let Some(session) = session {
+            let user_id = session.user_id;
+
+            if let Some(recipient_id_str) = query.get("recipient_id") {
+                if let Ok(recipient_id) = recipient_id_str.parse::<i64>() {
+                    // Отримуємо повідомлення між поточним користувачем і обраним одержувачем
+                    let messages = sqlx::query!(
+                        "SELECT
+                            messages.id,
+                            messages.sender_id,
+                            messages.recipient_id,
+                            users.username AS sender_name,
+                            messages.content,
+                            messages.timestamp
+                        FROM
+                            messages
+                        JOIN
+                            users ON messages.sender_id = users.id
+                        WHERE
+                            (messages.sender_id = ? AND messages.recipient_id = ?)
+                            OR
+                            (messages.sender_id = ? AND messages.recipient_id = ?)
+                        ORDER BY
+                            messages.timestamp ASC;",
+                        user_id,
+                        recipient_id,
+                        recipient_id,
+                        user_id
+                    )
+                        .fetch_all(db)
+                        .await
+                        .unwrap_or_default();
+
+                    let messages: Vec<ChatMessage> = messages.into_iter()
+                        .filter_map(|record| {
+                            Some(ChatMessage {
+                                id: record.id,
+                                sender_id: record.sender_id,
+                                recipient_id: record.recipient_id.expect("REASON"),
+                                sender_name: record.sender_name,
+                                content: record.content,
+                                timestamp: record.timestamp.unwrap_or_else(|| "Unknown".to_string()),
+                            })
+                        })
+                        .collect();
+
+
+                    return HttpResponse::Ok().json(messages);
+                }
+            }
+        }
+    }
+
+    HttpResponse::Unauthorized().body("Unauthorized")
 }

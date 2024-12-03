@@ -1,3 +1,5 @@
+use serde::Serialize;
+
 #[derive(sqlx::FromRow)]
 pub struct SessionToken {
     pub id: i64,
@@ -12,10 +14,11 @@ pub struct User {
     pub password: String,
 }
 
-#[derive(sqlx::FromRow)]
+#[derive(sqlx::FromRow, Serialize)]
 pub struct ChatMessage {
     pub id: i64,
     pub sender_id: i64,
+    pub recipient_id: i64,
     pub sender_name: String,
     pub content: String,
     pub timestamp: String,

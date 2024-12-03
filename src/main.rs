@@ -11,7 +11,6 @@ struct AppState {
     tx: broadcast::Sender<String>,
 }
 
-
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
     env_logger::init(); // Ініціалізація логера
@@ -34,6 +33,8 @@ async fn main() -> std::io::Result<()> {
             .service(routes::login)
             .service(routes::index)
             .service(routes::logout)
+            .service(routes::get_users) // Додано
+            .service(routes::get_messages) // Додано
             .service(web::resource("/ws/").route(web::get().to(websocket::websocket_route)))
     })
         .bind("127.0.0.1:8080")?
