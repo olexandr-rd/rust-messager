@@ -95,7 +95,7 @@
     socket.onmessage = function(event) {
         const data = JSON.parse(event.data);
         // Відображаємо повідомлення, якщо воно відправлене або отримане від поточного одержувача
-        if (data.sender_id === currentRecipientId || data.recipient_id === currentRecipientId) {
+        if (data.sender_id == currentRecipientId || data.recipient_id == currentRecipientId) {
             chat.value += `${data.sender_name}: ${data.content} [${data.timestamp}]\n`;
         }
     };
