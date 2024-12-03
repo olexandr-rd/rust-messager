@@ -15,36 +15,101 @@
         </form>
     </div>
     <div class="mb-3">
-        <textarea id="chat" class="form-control" rows="10" readonly></textarea>
+        <select id="recipientSelect" class="form-select">
+            <option value="">Виберіть користувача</option>
+        </select>
     </div>
-    <form class="input-group" id="message-form">
-        <input type="text" id="message" class="form-control" placeholder="Напишіть повідомлення...">
-        <button class="btn btn-primary" type="submit">Надіслати</button>
-    </form>
+    <div id="messageSection" style="display: none;"> <!-- Initially hidden -->
+        <div class="mb-3">
+            <textarea id="chat" class="form-control" rows="10" readonly></textarea>
+        </div>
+        <form id="messageForm" class="input-group">
+            <input type="text" id="messageInput" class="form-control" placeholder="Напишіть повідомлення...">
+            <button class="btn btn-primary" type="submit">Надіслати</button>
+        </form>
+    </div>
 </div>
 <script>
     const chat = document.getElementById('chat');
-    chat.value = ''; // Очищення чату при завантаженні сторінки
-
-    const messageInput = document.getElementById('message');
+    const messageInput = document.getElementById('messageInput');
+    const recipientSelect = document.getElementById('recipientSelect');
+    const messageSection = document.getElementById('messageSection');
     const socket = new WebSocket("ws://127.0.0.1:8080/ws/");
 
-    document.getElementById('message-form').addEventListener("submit", async (event) => {
-        event.preventDefault();
-        sendMessage();
-    });
+    let currentRecipientId = null;
 
-    socket.onmessage = function(event) {
-        chat.value += event.data + "\n";
-    };
-
-    function sendMessage() {
-        const message = messageInput.value.trim();
-        if (message) {
-            socket.send(message);
-            messageInput.value = '';
+    // Завантаження списку користувачів
+    async function loadUsers() {
+        const response = await fetch('/api/users');
+        if (response.ok) {
+            const users = await response.json();
+            users.forEach(user => {
+                const option = document.createElement('option');
+                option.value = user.id;
+                option.textContent = user.username;
+                recipientSelect.appendChild(option);
+            });
         }
     }
+
+    // Завантаження історії повідомлень
+    async function loadMessages() {
+        if (currentRecipientId) {
+            const response = await fetch(`/api/messages?recipient_id=${currentRecipientId}`);
+            if (response.ok) {
+                const messages = await response.json();
+                chat.value = '';
+                messages.forEach(msg => {
+                    chat.value += `${msg.sender_name}: ${msg.content} [${msg.timestamp}]\n`;
+                });
+            }
+        }
+    }
+
+    // Обробка вибору одержувача
+    recipientSelect.addEventListener('change', () => {
+        currentRecipientId = recipientSelect.value;
+        if (currentRecipientId) {
+            messageSection.style.display = "block"; // Show the messages section
+            loadMessages();
+        } else {
+            messageSection.style.display = "none"; // Hide the messages section
+        }
+    });
+
+    // Надсилання повідомлення
+    document.getElementById('messageForm').addEventListener('submit', (event) => {
+        event.preventDefault();
+        const message = messageInput.value.trim();
+        if (message && currentRecipientId) {
+            const data = {
+                recipient_id: parseInt(currentRecipientId),
+                message: message,
+            };
+            socket.send(JSON.stringify(data));
+            messageInput.value = '';
+        }
+    });
+
+    // Обробка отриманих повідомлень
+    socket.onmessage = function(event) {
+        const data = JSON.parse(event.data);
+        // Відображаємо повідомлення, якщо воно відправлене або отримане від поточного одержувача
+        if (data.sender_id === currentRecipientId || data.recipient_id === currentRecipientId) {
+            chat.value += `${data.sender_name}: ${data.content} [${data.timestamp}]\n`;
+        }
+    };
+
+    // Ініціалізація
+    loadUsers();
+
+    socket.onerror = function(error) {
+        console.error('WebSocket error:', error);
+    };
+
+    socket.onclose = function() {
+        console.warn('WebSocket connection closed');
+    };
 </script>
 </body>
 </html>

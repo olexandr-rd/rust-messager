@@ -44,15 +44,6 @@ pub async fn websocket_route(
                 .await
                 .unwrap_or_else(|_| vec![]);
 
-            // match messages {
-            //     Ok(messages) => {
-            //         println!("Messages retrieved: {:?}", messages);
-            //     }
-            //     Err(err) => {
-            //         eprintln!("Failed to fetch messages: {:?}", err);
-            //     }
-            // }
-
             // Створення WebSocket з'єднання
             let (response, mut session, msg_stream) = handle(&req, stream)?;
 
@@ -93,57 +84,65 @@ async fn websocket_handler(
     loop {
         tokio::select! {
             Some(Ok(msg)) = msg_stream.next() => {
-                match msg {
-                    Message::Text(text) => {
-                        let text = text.to_string();
+                if let Message::Text(text) = msg {
+                    // Парсимо отримане повідомлення
+                    let data: serde_json::Value = serde_json::from_str(&text).unwrap_or_default();
+                    let message_content = data["message"].as_str().unwrap_or("").to_string();
+                    let recipient_id = data["recipient_id"].as_i64().unwrap_or(0);
 
-                        // Збереження повідомлення у базу
-                        let result = sqlx::query!(
-                            "INSERT INTO messages (sender_id, content) VALUES (?, ?)",
-                            sender_id,
-                            text
-                        )
-                        .execute(db)
-                        .await;
-
-                        if let Err(err) = result {
-                            eprintln!("Failed to save message: {:?}", err);
-                        }
-
-                        // Отримуємо ім'я відправника
-                        let sender_name = sqlx::query_scalar!(
-                            "SELECT username FROM users WHERE id = ?",
-                            sender_id
-                        )
-                        .fetch_one(db)
-                        .await
-                        .unwrap_or_else(|_| "Анонім".to_string());
-
-                        // Отримуємо поточний таймстемп
-                        let timestamp = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
-
-                        // Форматування повідомлення
-                        let formatted_message = format!(
-                            "{}: {}      [{}]",
-                            sender_name, text, timestamp
-                        );
-
-                        // Надсилання повідомлення всім клієнтам через канал мовлення
-                        let _ = app_state.tx.send(formatted_message);
+                    if recipient_id == 0 {
+                        eprintln!("Invalid recipient_id");
+                        continue;
                     }
-                    Message::Close(reason) => {
-                        if let Err(err) = session.close(reason).await {
-                            eprintln!("Failed to close connection: {:?}", err);
-                        }
-                        break;
-                    }
-                    _ => {}
+
+                    // Отримуємо поточний таймстемп
+                    let timestamp = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
+
+                    // Збереження повідомлення у базу
+                    sqlx::query!(
+                        "INSERT INTO messages (sender_id, recipient_id, content, timestamp) VALUES (?, ?, ?, ?)",
+                        sender_id,
+                        recipient_id,
+                        message_content,
+                        timestamp
+                    )
+                    .execute(db)
+                    .await
+                    .ok();
+
+                    // Отримуємо ім'я відправника
+                    let sender_name = sqlx::query_scalar!(
+                        "SELECT username FROM users WHERE id = ?",
+                        sender_id
+                    )
+                    .fetch_one(db)
+                    .await
+                    .unwrap_or_else(|_| "Анонім".to_string());
+
+                    // Підготовка повідомлення
+                    let message_json = serde_json::json!({
+                        "sender_id": sender_id,
+                        "recipient_id": recipient_id,
+                        "sender_name": sender_name,
+                        "content": message_content,
+                        "timestamp": timestamp,
+                    });
+
+                    // Надсилання повідомлення через канал
+                    let _ = app_state.tx.send(message_json.to_string());
                 }
             }
             Ok(message) = rx.recv() => {
-                // Надсилання повідомлення клієнту
-                if let Err(err) = session.text(message).await {
-                    eprintln!("Failed to send message to client: {:?}", err);
+                // Парсимо отримане повідомлення
+                let data: serde_json::Value = serde_json::from_str(&message).unwrap_or_default();
+                let recipient_id = data["recipient_id"].as_i64().unwrap_or(0);
+                let sender_id_in_message = data["sender_id"].as_i64().unwrap_or(0);
+
+                // Відправляємо повідомлення, якщо клієнт є відправником або одержувачем
+                if recipient_id == sender_id || sender_id_in_message == sender_id {
+                    if let Err(err) = session.text(message).await {
+                        eprintln!("Failed to send message to client: {:?}", err);
+                    }
                 }
             }
             else => {
